@@ -20,6 +20,7 @@ import { analyzeBeatGrid } from "@/audio/tempo";
 import { computePeaks } from "@/audio/waveform";
 import { WaveformPanel } from "@/components/deck/WaveformPanel";
 import { RecordButton } from "@/components/deck/controls/RecordButton";
+import { ChromaSpecularPanel } from "@/components/deck/controls/ChromaSpecularPanel";
 import { beatPulseAt, type BeatPulse } from "@/visuals/beatPulse";
 import type { BeatGrid, WaveformPeaks } from "@/lib/types";
 
@@ -219,6 +220,9 @@ export function DeckShell() {
           onUploadImage={handleUploadImage}
         />
       </div>
+
+      {/* Ajuste fino de cor/forma (perímetro inferior-direito, colapsável) */}
+      <ChromaSpecularPanel chroma={params.chroma} specular={params.specular} dispatch={dispatch} />
 
       <FpsOverlay />
     </main>

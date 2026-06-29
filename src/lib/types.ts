@@ -29,6 +29,42 @@ export interface AudioFrame {
   readonly beatEnergy: number;
 }
 
+/**
+ * Vetor Cromático (Lei 7 — Thin Projection): gradação de cor aplicada como
+ * transformação contínua no último estágio do pixel pipeline (GPU). Defaults =
+ * identidade, então o visual não muda até o usuário tocar nos controles.
+ */
+export interface ChromaParams {
+  /** Offset DC linear da onda de pixel, -0.5..0.5. */
+  brightness: number;
+  /** Expansão sigmoidal da distribuição RGB em torno de 0.5, 0..2. */
+  contrast: number;
+  /** Correção exponencial não-linear V^(1/γ), 0.2..3. */
+  gamma: number;
+  /** Magnitude do vetor de cor relativa ao eixo de luma, 0..2. */
+  saturation: number;
+  /** Rotação angular do vetor de cor (Rodrigues em torno de (1,1,1)), 0..TAU. */
+  hueShift: number;
+  /** Multiplicador de fótons (gatilho de bloom), 0..2. */
+  exposure: number;
+}
+
+/**
+ * Vetor Especular (Lei 8 — Structural Mutation): dobra o tecido de coordenadas
+ * $UV$ na base do fragment shader, ANTES da geração do padrão. Compõe-se por
+ * cima da dobra radial `segments` já existente.
+ */
+export interface SpecularParams {
+  /** Dobra no eixo X (espelho esquerda/direita): uv.x = abs(uv.x). */
+  horizontalMirror: boolean;
+  /** Dobra no eixo Y (espelho cima/baixo): uv.y = abs(uv.y). */
+  verticalMirror: boolean;
+  /** Coeficiente de multiplicação radial extra, 0..12 (0 = nenhuma dobra). */
+  mirrorCount: number;
+  /** Deslocamento espacial da âncora da dobra, -0.5..0.5. */
+  mirrorOffset: number;
+}
+
 /** Parâmetros canônicos do visual. A UI escreve; o loop de render lê via ref. */
 export interface VisualParams {
   /** Nº de fatias simétricas do caleidoscópio. */
@@ -51,6 +87,10 @@ export interface VisualParams {
   patternId: string;
   /** Ganho geral do áudio sobre o visual. */
   reactivity: number;
+  /** Gradação de cor (Vetor Cromático). */
+  chroma: ChromaParams;
+  /** Dobra de coordenadas (Vetor Especular). */
+  specular: SpecularParams;
 }
 
 /** Estado neutro e calmo — ponto de partida seguro do deck. */
@@ -66,6 +106,8 @@ export function createDefaultVisualParams(): VisualParams {
     trails: 0,
     patternId: "procedural-spiral",
     reactivity: 1,
+    chroma: { brightness: 0, contrast: 1, gamma: 1, saturation: 1, hueShift: 0, exposure: 1 },
+    specular: { horizontalMirror: false, verticalMirror: false, mirrorCount: 0, mirrorOffset: 0 },
   };
 }
 

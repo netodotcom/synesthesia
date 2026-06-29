@@ -36,10 +36,79 @@ uniform float uReactivity;
 uniform float uBeatPulse; // M10: pulso por beat (grade), decai entre beats
 uniform float uDownbeat;  // M10: pulso só no downbeat 4/4 — respiro principal
 
+// Vetor Cromático (Fase 3) — gradação no estágio final do pixel pipeline.
+uniform float uBrightness;
+uniform float uContrast;
+uniform float uGamma;
+uniform float uSaturation;
+uniform float uHueShift;
+uniform float uExposure;
+
+// Vetor Especular (Fase 3) — dobra de coordenadas na base do shader.
+uniform float uMirrorX;      // 0/1: uv.x = abs(uv.x)
+uniform float uMirrorY;      // 0/1: uv.y = abs(uv.y)
+uniform float uMirrorCount;  // dobra radial extra (0 = nenhuma)
+uniform float uMirrorOffset; // deslocamento da âncora
+
 const float TAU = 6.28318530718;
+const float PI = 3.14159265359;
 
 vec3 cosPalette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
   return a + b * cos(TAU * (c * t + d));
+}
+
+/**
+ * Dobra o tecido de coordenadas ANTES da geração do padrão (Lei 8). uv já vem
+ * centrado em 0 (não é [0,1] como no CONTROLS.MD), então não subtraímos 0.5.
+ * Compõe-se por cima da dobra radial uSegments do main.
+ */
+vec2 applySpecular(vec2 uv) {
+  uv += vec2(uMirrorOffset);
+
+  if (uMirrorX > 0.5) uv.x = abs(uv.x); // espelho esquerda/direita
+  if (uMirrorY > 0.5) uv.y = abs(uv.y); // espelho cima/baixo
+
+  // Multiplicação radial extra (matriz caleidoscópica).
+  if (uMirrorCount >= 1.0) {
+    float angle = atan(uv.y, uv.x);
+    float radius = length(uv);
+    float segment = PI / uMirrorCount;
+    angle = mod(angle, segment * 2.0);
+    angle = abs(angle - segment);
+    uv = vec2(cos(angle), sin(angle)) * radius;
+  }
+
+  uv -= vec2(uMirrorOffset);
+  return uv;
+}
+
+/**
+ * Gradação de cor como transformação contínua no fim do pipeline. Defaults de
+ * identidade ⇒ retorna a cor intacta. Rotação de hue via Rodrigues em torno de
+ * (1,1,1), evitando conversões HSL pesadas.
+ */
+vec3 applyChroma(vec3 color) {
+  // 1. Exposição e brilho linear.
+  color *= uExposure;
+  color += uBrightness;
+
+  // 2. Expansão sigmoidal de contraste em torno de 0.5.
+  color = (color - 0.5) * uContrast + 0.5;
+
+  // 3. Rotação do vetor de cor (Rodrigues, eixo da diagonal de cinza).
+  vec3 k = vec3(0.57735, 0.57735, 0.57735);
+  float cosA = cos(uHueShift);
+  color = color * cosA + cross(k, color) * sin(uHueShift) + k * dot(k, color) * (1.0 - cosA);
+
+  // 4. Saturação relativa ao eixo de luma.
+  float luma = dot(color, vec3(0.299, 0.587, 0.114));
+  color = mix(vec3(luma), color, uSaturation);
+
+  // 5. Gamma exponencial (guardado contra base negativa e divisão por zero).
+  color = max(color, vec3(0.0));
+  color = pow(color, vec3(1.0 / max(uGamma, 0.001)));
+
+  return color;
 }
 
 vec3 palette(float t, float id) {
@@ -54,6 +123,9 @@ vec3 palette(float t, float id) {
 
 void main() {
   vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / min(uResolution.x, uResolution.y);
+
+  // Vetor Especular — dobra o plano antes de tudo (compõe com uSegments abaixo).
+  uv = applySpecular(uv);
 
   float r = length(uv);
   float a = atan(uv.y, uv.x) + uRotation;
@@ -93,6 +165,9 @@ void main() {
   // movimento e se destaca quando o visual está calmo.
   float ring = 0.5 + 0.5 * cos(r * 16.0 - uTime * 3.0);
   col *= 1.0 + uDownbeat * (0.30 + 0.25 * ring) + uBeatPulse * 0.06;
+
+  // Vetor Cromático — gradação final (identidade por padrão).
+  col = applyChroma(col);
 
   gl_FragColor = vec4(col, 1.0);
 }

@@ -4,6 +4,9 @@ import {
   SEGMENT_STEPS,
   ROTATION_SPEEDS,
   PALETTE_COUNT,
+  MIRROR_COUNTS,
+  HUE_STEP,
+  TAU,
 } from "@/state/visualParamsReducer";
 import { createDefaultVisualParams, type VisualParams } from "@/lib/types";
 
@@ -82,5 +85,103 @@ describe("visualParamsReducer", () => {
     expect(on.trails).toBeGreaterThan(0);
     const off = visualParamsReducer(on, { type: "toggle-trails" });
     expect(off.trails).toBe(0);
+  });
+});
+
+describe("visualParamsReducer — chroma", () => {
+  it("set-chroma merges only the provided fields", () => {
+    const state = base();
+    const next = visualParamsReducer(state, {
+      type: "set-chroma",
+      payload: { saturation: 1.5 },
+    });
+    expect(next.chroma.saturation).toBe(1.5);
+    expect(next.chroma.contrast).toBe(state.chroma.contrast); // intacto
+    expect(next.chroma.brightness).toBe(state.chroma.brightness);
+  });
+
+  it("set-chroma clamps each field to its valid range", () => {
+    const next = visualParamsReducer(base(), {
+      type: "set-chroma",
+      payload: {
+        brightness: 5,
+        contrast: -3,
+        gamma: 99,
+        saturation: -1,
+        exposure: 100,
+      },
+    });
+    expect(next.chroma.brightness).toBe(0.5);
+    expect(next.chroma.contrast).toBe(0);
+    expect(next.chroma.gamma).toBe(3);
+    expect(next.chroma.saturation).toBe(0);
+    expect(next.chroma.exposure).toBe(2);
+  });
+
+  it("set-chroma never lets gamma reach zero (guards 1/γ)", () => {
+    const next = visualParamsReducer(base(), { type: "set-chroma", payload: { gamma: 0 } });
+    expect(next.chroma.gamma).toBeGreaterThan(0);
+  });
+
+  it("set-chroma does not mutate the input (purity)", () => {
+    const state = base();
+    const snapshot = JSON.parse(JSON.stringify(state));
+    visualParamsReducer(state, { type: "set-chroma", payload: { hueShift: 2 } });
+    expect(state).toEqual(snapshot);
+  });
+
+  it("cycle-hue advances by one step and wraps within [0, TAU)", () => {
+    let state = { ...base(), chroma: { ...base().chroma, hueShift: 0 } };
+    state = visualParamsReducer(state, { type: "cycle-hue" });
+    expect(state.chroma.hueShift).toBeCloseTo(HUE_STEP, 5);
+    // dá a volta completa e fica abaixo de TAU
+    for (let i = 0; i < 20; i++) state = visualParamsReducer(state, { type: "cycle-hue" });
+    expect(state.chroma.hueShift).toBeGreaterThanOrEqual(0);
+    expect(state.chroma.hueShift).toBeLessThan(TAU);
+  });
+});
+
+describe("visualParamsReducer — specular", () => {
+  it("toggle-mirror-x / toggle-mirror-y flip independently", () => {
+    let state = base();
+    state = visualParamsReducer(state, { type: "toggle-mirror-x" });
+    expect(state.specular.horizontalMirror).toBe(true);
+    expect(state.specular.verticalMirror).toBe(false);
+    state = visualParamsReducer(state, { type: "toggle-mirror-y" });
+    expect(state.specular.verticalMirror).toBe(true);
+    state = visualParamsReducer(state, { type: "toggle-mirror-x" });
+    expect(state.specular.horizontalMirror).toBe(false);
+  });
+
+  it("cycle-mirror-count steps through the set and wraps", () => {
+    let state: VisualParams = {
+      ...base(),
+      specular: { ...base().specular, mirrorCount: MIRROR_COUNTS[0] },
+    };
+    for (let i = 1; i < MIRROR_COUNTS.length; i++) {
+      state = visualParamsReducer(state, { type: "cycle-mirror-count" });
+      expect(state.specular.mirrorCount).toBe(MIRROR_COUNTS[i]);
+    }
+    state = visualParamsReducer(state, { type: "cycle-mirror-count" });
+    expect(state.specular.mirrorCount).toBe(MIRROR_COUNTS[0]); // wrap
+  });
+
+  it("set-mirror-count rounds to an int and clamps to [0, 12]", () => {
+    expect(visualParamsReducer(base(), { type: "set-mirror-count", payload: 3.7 }).specular.mirrorCount).toBe(4);
+    expect(visualParamsReducer(base(), { type: "set-mirror-count", payload: 99 }).specular.mirrorCount).toBe(12);
+    expect(visualParamsReducer(base(), { type: "set-mirror-count", payload: -5 }).specular.mirrorCount).toBe(0);
+  });
+
+  it("set-mirror-offset clamps to [-0.5, 0.5]", () => {
+    expect(visualParamsReducer(base(), { type: "set-mirror-offset", payload: 9 }).specular.mirrorOffset).toBe(0.5);
+    expect(visualParamsReducer(base(), { type: "set-mirror-offset", payload: -9 }).specular.mirrorOffset).toBe(-0.5);
+  });
+
+  it("specular actions do not mutate the input (purity)", () => {
+    const state = base();
+    const snapshot = JSON.parse(JSON.stringify(state));
+    visualParamsReducer(state, { type: "toggle-mirror-x" });
+    visualParamsReducer(state, { type: "set-mirror-count", payload: 8 });
+    expect(state).toEqual(snapshot);
   });
 });

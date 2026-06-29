@@ -68,4 +68,51 @@ describe("applyUniforms", () => {
     expect(u.uLevel.value).toBeLessThan(1);
     expect(u.uBeat.value).toBeLessThan(1);
   });
+
+  it("defaults the chroma uniforms to the identity grade", () => {
+    const u = createUniforms();
+    applyUniforms(u, createDefaultVisualParams(), null, 0, 0);
+    expect(u.uBrightness.value).toBe(0);
+    expect(u.uContrast.value).toBe(1);
+    expect(u.uGamma.value).toBe(1);
+    expect(u.uSaturation.value).toBe(1);
+    expect(u.uHueShift.value).toBe(0);
+    expect(u.uExposure.value).toBe(1);
+  });
+
+  it("projects chroma params into their uniforms", () => {
+    const u = createUniforms();
+    const params = createDefaultVisualParams();
+    params.chroma = {
+      brightness: 0.1,
+      contrast: 1.4,
+      gamma: 0.8,
+      saturation: 1.7,
+      hueShift: 2.5,
+      exposure: 1.2,
+    };
+    applyUniforms(u, params, null, 0, 0);
+    expect(u.uBrightness.value).toBe(0.1);
+    expect(u.uContrast.value).toBe(1.4);
+    expect(u.uGamma.value).toBe(0.8);
+    expect(u.uSaturation.value).toBe(1.7);
+    expect(u.uHueShift.value).toBe(2.5);
+    expect(u.uExposure.value).toBe(1.2);
+  });
+
+  it("projects specular params (mirrors as 0/1) into their uniforms", () => {
+    const u = createUniforms();
+    const params = createDefaultVisualParams();
+    params.specular = {
+      horizontalMirror: true,
+      verticalMirror: false,
+      mirrorCount: 6,
+      mirrorOffset: 0.25,
+    };
+    applyUniforms(u, params, null, 0, 0);
+    expect(u.uMirrorX.value).toBe(1);
+    expect(u.uMirrorY.value).toBe(0);
+    expect(u.uMirrorCount.value).toBe(6);
+    expect(u.uMirrorOffset.value).toBe(0.25);
+  });
 });

@@ -1,6 +1,6 @@
 import type { ParamActionType } from "@/state/visualParamsReducer";
 
-/** Comandos do teclado: as 8 ações do reducer + 2 de troca de padrão. */
+/** Comandos do teclado: as ações discretas do reducer + 2 de troca de padrão. */
 export type Command = ParamActionType | "pattern-prev" | "pattern-next";
 
 export interface KeyBinding {
@@ -10,8 +10,8 @@ export interface KeyBinding {
 }
 
 /**
- * Mapa fixo das 10 teclas (Q W E R A S D F Z X). Fonte única para o handler
- * de teclado e para o overlay de ajuda.
+ * Mapa fixo das 14 teclas (Q W E R A S D F Z X · T C V B). Fonte única para o
+ * handler de teclado e para o overlay de ajuda. T C V B = gestos Chroma/Specular.
  */
 export const KEY_BINDINGS: readonly KeyBinding[] = [
   { key: "q", command: "cycle-segments", label: "Fatias simétricas" },
@@ -24,4 +24,8 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
   { key: "f", command: "toggle-trails", label: "Trails (persistência)" },
   { key: "z", command: "pattern-prev", label: "Padrão anterior" },
   { key: "x", command: "pattern-next", label: "Próximo padrão" },
+  { key: "t", command: "cycle-hue", label: "Girar matiz (hue)" },
+  { key: "c", command: "cycle-mirror-count", label: "Dobras espelhadas extra" },
+  { key: "v", command: "toggle-mirror-x", label: "Espelho horizontal" },
+  { key: "b", command: "toggle-mirror-y", label: "Espelho vertical" },
 ];

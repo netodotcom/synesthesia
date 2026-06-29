@@ -24,6 +24,22 @@ export interface KaleidoUniforms {
   uBeatPulse: { value: number };
   /** Pulso só no downbeat 4/4 (M10): dirige o respiro concêntrico. */
   uDownbeat: { value: number };
+  // --- Vetor Cromático (Fase 3) — gradação no estágio final do pixel pipeline ---
+  uBrightness: { value: number };
+  uContrast: { value: number };
+  uGamma: { value: number };
+  uSaturation: { value: number };
+  uHueShift: { value: number };
+  uExposure: { value: number };
+  // --- Vetor Especular (Fase 3) — dobra de coordenadas na base do shader -------
+  /** Espelho horizontal (0/1): uv.x = abs(uv.x). */
+  uMirrorX: { value: number };
+  /** Espelho vertical (0/1): uv.y = abs(uv.y). */
+  uMirrorY: { value: number };
+  /** Dobra radial extra (0 = nenhuma). */
+  uMirrorCount: { value: number };
+  /** Deslocamento da âncora da dobra. */
+  uMirrorOffset: { value: number };
 }
 
 export function createUniforms(): KaleidoUniforms {
@@ -45,6 +61,18 @@ export function createUniforms(): KaleidoUniforms {
     uReactivity: { value: 1 },
     uBeatPulse: { value: 0 },
     uDownbeat: { value: 0 },
+    // Chroma — defaults de identidade (saída inalterada até o usuário mexer).
+    uBrightness: { value: 0 },
+    uContrast: { value: 1 },
+    uGamma: { value: 1 },
+    uSaturation: { value: 1 },
+    uHueShift: { value: 0 },
+    uExposure: { value: 1 },
+    // Specular — sem dobra extra por padrão.
+    uMirrorX: { value: 0 },
+    uMirrorY: { value: 0 },
+    uMirrorCount: { value: 0 },
+    uMirrorOffset: { value: 0 },
   };
 }
 
@@ -88,4 +116,20 @@ export function applyUniforms(
   // Pulso travado no beat grid (M10): independente do FFT — vem da grade.
   u.uBeatPulse.value = beat ? beat.beatPulse : 0;
   u.uDownbeat.value = beat ? beat.downbeatPulse : 0;
+
+  // Vetor Cromático — escalares puros, zero alocação por frame.
+  const c = params.chroma;
+  u.uBrightness.value = c.brightness;
+  u.uContrast.value = c.contrast;
+  u.uGamma.value = c.gamma;
+  u.uSaturation.value = c.saturation;
+  u.uHueShift.value = c.hueShift;
+  u.uExposure.value = c.exposure;
+
+  // Vetor Especular — bools projetados como 0/1.
+  const s = params.specular;
+  u.uMirrorX.value = s.horizontalMirror ? 1 : 0;
+  u.uMirrorY.value = s.verticalMirror ? 1 : 0;
+  u.uMirrorCount.value = s.mirrorCount;
+  u.uMirrorOffset.value = s.mirrorOffset;
 }

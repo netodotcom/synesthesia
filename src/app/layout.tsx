@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Synesthesia DJ Deck",
+  title: "Synesthesia",
   description: "Caleidoscópios psicodélicos gerados por código, reativos a áudio.",
 };
 

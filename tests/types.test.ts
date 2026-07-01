@@ -1,54 +1,36 @@
 import { describe, it, expect } from "vitest";
-import { createDefaultVisualParams } from "@/lib/types";
+import { createDefaultPipelineParams, MAX_LAYERS } from "@/lib/types";
 
-describe("createDefaultVisualParams", () => {
+describe("createDefaultPipelineParams", () => {
   it("returns a fresh object each call (no shared mutable state)", () => {
-    const a = createDefaultVisualParams();
-    const b = createDefaultVisualParams();
-    a.segments = 99;
-    expect(b.segments).toBe(6);
+    const a = createDefaultPipelineParams();
+    const b = createDefaultPipelineParams();
+    a.layerDensity = 99;
+    expect(b.layerDensity).toBe(2);
   });
 
-  it("starts calm: strobe and trails off", () => {
-    const p = createDefaultVisualParams();
-    expect(p.strobe).toBe(false);
-    expect(p.trails).toBe(0);
+  it("nested pattern params are fresh per call", () => {
+    const a = createDefaultPipelineParams();
+    const b = createDefaultPipelineParams();
+    a.grid.count = 99;
+    a.spiral.zoom = 99;
+    a.rings.count = 99;
+    expect(b.grid.count).toBe(3);
+    expect(b.spiral.zoom).toBe(1);
+    expect(b.rings.count).toBe(4);
   });
 
-  it("defaults to a valid pattern id and positive reactivity", () => {
-    const p = createDefaultVisualParams();
-    expect(p.patternId.length).toBeGreaterThan(0);
+  it("starts calm and readable: no geometric pattern, sane density", () => {
+    const p = createDefaultPipelineParams();
+    expect(p.pattern).toBe("none");
+    expect(p.layerDensity).toBeGreaterThanOrEqual(1);
+    expect(p.layerDensity).toBeLessThanOrEqual(MAX_LAYERS);
     expect(p.reactivity).toBeGreaterThan(0);
   });
 
-  it("chroma defaults to the identity grade (no visual change)", () => {
-    const { chroma } = createDefaultVisualParams();
-    expect(chroma).toEqual({
-      brightness: 0,
-      contrast: 1,
-      gamma: 1,
-      saturation: 1,
-      hueShift: 0,
-      exposure: 1,
-    });
-  });
-
-  it("specular defaults to no folding (mirrors off, no extra fold)", () => {
-    const { specular } = createDefaultVisualParams();
-    expect(specular).toEqual({
-      horizontalMirror: false,
-      verticalMirror: false,
-      mirrorCount: 0,
-      mirrorOffset: 0,
-    });
-  });
-
-  it("nested chroma/specular are fresh per call (no shared mutable state)", () => {
-    const a = createDefaultVisualParams();
-    const b = createDefaultVisualParams();
-    a.chroma.saturation = 99;
-    a.specular.mirrorCount = 8;
-    expect(b.chroma.saturation).toBe(1);
-    expect(b.specular.mirrorCount).toBe(0);
+  it("defaults to a valid blend mode and transition", () => {
+    const p = createDefaultPipelineParams();
+    expect(["difference", "exclusion", "screen", "add", "displacement"]).toContain(p.blendMode);
+    expect(["time", "beat"]).toContain(p.transitionMode);
   });
 });

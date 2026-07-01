@@ -29,85 +29,174 @@ export interface AudioFrame {
   readonly beatEnergy: number;
 }
 
-/**
- * Vetor Cromático (Lei 7 — Thin Projection): gradação de cor aplicada como
- * transformação contínua no último estágio do pixel pipeline (GPU). Defaults =
- * identidade, então o visual não muda até o usuário tocar nos controles.
- */
-export interface ChromaParams {
-  /** Offset DC linear da onda de pixel, -0.5..0.5. */
-  brightness: number;
-  /** Expansão sigmoidal da distribuição RGB em torno de 0.5, 0..2. */
-  contrast: number;
-  /** Correção exponencial não-linear V^(1/γ), 0.2..3. */
-  gamma: number;
-  /** Magnitude do vetor de cor relativa ao eixo de luma, 0..2. */
-  saturation: number;
-  /** Rotação angular do vetor de cor (Rodrigues em torno de (1,1,1)), 0..TAU. */
-  hueShift: number;
-  /** Multiplicador de fótons (gatilho de bloom), 0..2. */
-  exposure: number;
-}
+/** Máximo de camadas (samplers) que o pipeline mescla por frame. */
+export const MAX_LAYERS = 8;
 
 /**
- * Vetor Especular (Lei 8 — Structural Mutation): dobra o tecido de coordenadas
- * $UV$ na base do fragment shader, ANTES da geração do padrão. Compõe-se por
- * cima da dobra radial `segments` já existente.
+ * Como os pixels RGB de duas camadas se combinam. `displacement` é especial: os
+ * canais de luma das camadas superiores deslocam as coordenadas UV da camada
+ * base (textura "derretida"), em vez de misturar cor.
  */
-export interface SpecularParams {
-  /** Dobra no eixo X (espelho esquerda/direita): uv.x = abs(uv.x). */
-  horizontalMirror: boolean;
-  /** Dobra no eixo Y (espelho cima/baixo): uv.y = abs(uv.y). */
-  verticalMirror: boolean;
-  /** Coeficiente de multiplicação radial extra, 0..12 (0 = nenhuma dobra). */
-  mirrorCount: number;
-  /** Deslocamento espacial da âncora da dobra, -0.5..0.5. */
-  mirrorOffset: number;
+export type BlendMode = "difference" | "exclusion" | "screen" | "add" | "displacement";
+
+/** Filtro geométrico aplicado sobre o resultado da mesclagem (evolução dos padrões antigos). */
+export type GeoPattern = "none" | "grid" | "spiral" | "rings";
+
+/** Como avança a transição automática entre as imagens do pool. */
+export type TransitionMode = "time" | "beat";
+
+/** Padrão Grade: ladrilha a imagem combinada. */
+export interface GridParams {
+  /** Nº de colunas/linhas (grade quadrada). */
+  count: number;
+  /** Espaçamento entre ladrilhos, 0..0.4 (fração da célula). */
+  gap: number;
+  /** Rotação alternada (xadrez) dos ladrilhos, rad. */
+  altRotation: number;
 }
 
-/** Parâmetros canônicos do visual. A UI escreve; o loop de render lê via ref. */
-export interface VisualParams {
-  /** Nº de fatias simétricas do caleidoscópio. */
-  segments: number;
-  /** Índice da paleta ativa. */
-  paletteId: number;
-  /** Inverte a paleta ativa. */
-  paletteInverted: boolean;
-  /** Velocidade de rotação base, rad/s (sinal = sentido). */
-  rotationSpeed: number;
-  /** Escala do feed (zoom). */
+/** Padrão Espiral: distorce as UV num fluxo espiralado. */
+export interface SpiralParams {
+  /** Voltas / aperto da espiral. */
+  tightness: number;
+  /** Velocidade de rotação, rad/s. */
+  speed: number;
+  /** Zoom central (>1 aproxima o centro). */
   zoom: number;
-  /** Intensidade do domain-warp. */
-  warp: number;
-  /** Strobo guiado pela energia de sub-grave. */
-  strobe: boolean;
-  /** Persistência/feedback (0 = desligado). */
-  trails: number;
-  /** Id da fonte de padrão ativa (ver patterns/registry). */
-  patternId: string;
-  /** Ganho geral do áudio sobre o visual. */
-  reactivity: number;
-  /** Gradação de cor (Vetor Cromático). */
-  chroma: ChromaParams;
-  /** Dobra de coordenadas (Vetor Especular). */
-  specular: SpecularParams;
 }
 
-/** Estado neutro e calmo — ponto de partida seguro do deck. */
-export function createDefaultVisualParams(): VisualParams {
+/** Padrão Anéis: repete a imagem em círculos concêntricos (túnel). */
+export interface RingParams {
+  /** Quantidade de anéis (frequência radial). */
+  count: number;
+  /** Tiling angular da imagem ao redor do túnel. */
+  radialScale: number;
+  /** Velocidade de expansão do túnel. */
+  tunnelSpeed: number;
+}
+
+/**
+ * Fonte de modulação de áudio ligada a um parâmetro. `none` = valor estático;
+ * caso contrário o pico instantâneo daquela banda modula o parâmetro no frame.
+ */
+export type AudioBand = "none" | "sub" | "low" | "mid" | "high";
+
+/** Chaves dos parâmetros contínuos que aceitam roteamento de áudio (audioBinding). */
+export type BindKey =
+  | "displaceAmount"
+  | "layerDensity"
+  | "gridCount"
+  | "gridGap"
+  | "gridAltRotation"
+  | "spiralTightness"
+  | "spiralSpeed"
+  | "spiralZoom"
+  | "ringCount"
+  | "ringRadialScale"
+  | "tunnelSpeed"
+  | "brightness"
+  | "glitchAmount";
+
+/** Lista canônica das chaves ligáveis (iteração de defaults/presets/UI). */
+export const BIND_KEYS: BindKey[] = [
+  "displaceAmount",
+  "layerDensity",
+  "gridCount",
+  "gridGap",
+  "gridAltRotation",
+  "spiralTightness",
+  "spiralSpeed",
+  "spiralZoom",
+  "ringCount",
+  "ringRadialScale",
+  "tunnelSpeed",
+  "brightness",
+  "glitchAmount",
+];
+
+/** Mecânica de transição no modo beat. */
+export type BeatTransition = "cut" | "warp";
+
+/**
+ * Parâmetros canônicos do pipeline de textura. A UI (worktrees) escreve; o loop
+ * de render lê via ref. Duas etapas: mesclagem das camadas → filtro geométrico.
+ * Cada parâmetro contínuo pode ser roteado a uma banda de áudio via `bindings`.
+ */
+export interface PipelineParams {
+  // --- Worktree direita: mesclagem (texture pipeline) ---
+  /** Algoritmo de combinação dos pixels das camadas. */
+  blendMode: BlendMode;
+  /** Quantas imagens selecionadas aparecem sobrepostas por vez, 1..MAX_LAYERS. */
+  layerDensity: number;
+  /** Intensidade do deslocamento (modo displacement), 0..1. */
+  displaceAmount: number;
+  /** Brilho final multiplicado sobre a cor, 0..3. */
+  brightness: number;
+  /** Intensidade do glitch/tearing base (também disparado por picos de agudo), 0..1. */
+  glitchAmount: number;
+  /** Origem do avanço da transição automática (tempo x energia/beat). */
+  transitionMode: TransitionMode;
+  /** Intervalo da transição no modo tempo, em segundos (0 = sem avanço). */
+  transitionInterval: number;
+  /** Mecânica da transição no modo beat: corte seco ou warp por deslocamento. */
+  beatTransition: BeatTransition;
+  /** Limiar de beatEnergy (0..1) que dispara a troca no modo beat. */
+  beatThreshold: number;
+
+  // --- Worktree de padrões geométricos ---
+  /** Filtro geométrico ativo sobre a mesclagem. */
+  pattern: GeoPattern;
+  grid: GridParams;
+  spiral: SpiralParams;
+  rings: RingParams;
+
+  // --- Global ---
+  /** Ganho geral do áudio sobre o visual, 0..2 (escala toda modulação). */
+  reactivity: number;
+  /** Roteamento de áudio por parâmetro (audioBinding de cada slider). */
+  bindings: Record<BindKey, AudioBand>;
+}
+
+/**
+ * Roteamento padrão de fábrica: Sub → escala/transição, Mid → deformação
+ * geométrica, High → detalhe/emissão. É o estado reativo "out of the box".
+ */
+export function createDefaultBindings(): Record<BindKey, AudioBand> {
   return {
-    segments: 6,
-    paletteId: 0,
-    paletteInverted: false,
-    rotationSpeed: 0.2,
-    zoom: 1,
-    warp: 0.15,
-    strobe: false,
-    trails: 0,
-    patternId: "procedural-spiral",
+    displaceAmount: "sub",
+    layerDensity: "none",
+    gridCount: "high",
+    gridGap: "high",
+    gridAltRotation: "mid",
+    spiralTightness: "none",
+    spiralSpeed: "mid",
+    spiralZoom: "none",
+    ringCount: "none",
+    ringRadialScale: "high",
+    tunnelSpeed: "mid",
+    brightness: "sub",
+    glitchAmount: "high",
+  };
+}
+
+/** Estado inicial calmo e legível — imagem quase intacta, mas já reativa. */
+export function createDefaultPipelineParams(): PipelineParams {
+  return {
+    blendMode: "difference",
+    layerDensity: 2,
+    displaceAmount: 0.25,
+    brightness: 1,
+    glitchAmount: 0.2,
+    transitionMode: "time",
+    transitionInterval: 4,
+    beatTransition: "cut",
+    beatThreshold: 0.5,
+    pattern: "none",
+    grid: { count: 3, gap: 0.04, altRotation: 0 },
+    spiral: { tightness: 3, speed: 0.15, zoom: 1 },
+    rings: { count: 4, radialScale: 3, tunnelSpeed: 0.2 },
     reactivity: 1,
-    chroma: { brightness: 0, contrast: 1, gamma: 1, saturation: 1, hueShift: 0, exposure: 1 },
-    specular: { horizontalMirror: false, verticalMirror: false, mirrorCount: 0, mirrorOffset: 0 },
+    bindings: createDefaultBindings(),
   };
 }
 

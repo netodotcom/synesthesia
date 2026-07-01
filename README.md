@@ -1,49 +1,66 @@
 # Synesthesia
 
-A browser-based, audio-reactive kaleidoscope — a live VJ instrument that turns
-sound into procedurally generated, symmetric geometry in real time. Upload a
-track or use the microphone, and drive the visuals from the keyboard while it
-locks to the beat. Record the performance straight to video.
+A browser-based, audio-reactive **image manipulation** VJ instrument. Build a pool
+of textures from the **Unsplash API** and **local uploads**, blend and warp them on
+the GPU, and drive the mix from two parameter **worktrees** — inspired by the
+node/parameter workflow of Synesthesia VJ. Upload a track or use the microphone,
+and record the performance straight to video.
 
 **Live:** https://netodotcom.github.io/synesthesia
 
 ---
 
+## How it works
+
+Two stages, entirely GPU pixel manipulation (no 3D geometry):
+
+1. **Texture pool → blend.** The images you select are blended per frame with a
+   chosen algorithm; an automatic transition slides the active window over the
+   pool on a timer or on the beat.
+2. **Geometric filter.** The blended result is distorted by an optional pattern
+   (grid / spiral / rings) — the old fixed visuals reborn as UV filters.
+
+Audio (file or mic) modulates the brightness and the beat-synced transitions.
+
 ## Features
 
-- **Audio in:** upload `.mp3` / `.wav` (full transport — play/pause/seek/volume/loop)
-  or switch to the live **microphone**.
-- **Kaleidoscope engine:** a GLSL fragment shader on a fullscreen quad — polar
-  folding, color palettes, domain warp, strobe and feedback trails, all on the GPU.
-- **Beat grid:** offline BPM detection (autocorrelation over a kick-band onset
-  envelope) builds a constant 4/4 grid; the visuals pulse on the downbeat.
-- **Waveform:** the whole track is rendered as an instrument — playhead, the beat
-  grid overlaid, and click-to-seek.
-- **Pattern sources (pluggable):** procedural, bundled, or your own uploaded image.
-- **Live recording:** capture the canvas + audio to **MP4** (H.264/AAC), with an
-  automatic **WebM** fallback where MP4 isn't supported.
-- **60 fps hot path:** all heavy work (FFT, matrix/uniform updates) runs in a
-  `requestAnimationFrame` loop via refs — the React tree never re-renders per frame.
+- **Input engine (texture pool):**
+  - Unsplash — loads the first 5 photos of a default profile automatically,
+    **search any profile**, and **Fetch More** to page in fresh images (falls
+    back to random photos when a profile runs out).
+  - **Local uploads** — drag-and-drop or pick `.png` / `.jpg`, injected straight
+    into the pool.
+  - **Multi-select** — pick any number of images (marked with a ✓); the selection
+    is what feeds the pipeline, and it persists across reloads.
+- **Blend worktree:** blend modes — **Difference · Exclusion · Screen · Add ·
+  Displacement** (luma of the upper layers melts the base layer) — plus layer
+  density, transition frequency (seconds or **beat**), and audio reactivity.
+- **Geometric pattern worktree:** **Grid** (tiles, gap, alternating rotation),
+  **Spiral** (tightness, rotation speed, central zoom), **Rings / Tunnel** (ring
+  count, radial frequency, tunnel speed).
+- **Audio in:** upload `.mp3` / `.wav` (full transport) or the live **microphone**;
+  offline BPM/beat-grid detection and a click-to-seek **waveform**.
+- **Live recording:** capture canvas + audio to **MP4** (H.264/AAC), WebM fallback.
+- **60 fps hot path:** all per-frame work runs in `requestAnimationFrame` via refs;
+  the React tree never re-renders per frame. Textures are lifecycle-managed
+  (dispose + object-URL revocation) so repeated uploads/swaps don't leak.
 
-## Controls
+## Unsplash API key
 
-| Key | Action |
-|-----|--------|
-| **Q** | Cycle number of symmetric slices |
-| **W** | Swap / invert the color palette |
-| **E** | Toggle sub-bass strobe |
-| **R** | Flip direction + adjust rotation speed |
-| **A** | Zoom in |
-| **S** | Zoom out |
-| **D** | Increase distortion (warp) |
-| **F** | Toggle trails (feedback persistence) |
-| **Z** | Previous pattern source |
-| **X** | Next pattern source |
+The Unsplash **Access Key** is public by design (Client-ID auth, no user login).
+Provide it either way:
+
+- Local dev: put `NEXT_PUBLIC_UNSPLASH_ACCESS_KEY=...` in `.env.local` (gitignored).
+- Anywhere (incl. the deployed site): paste it into the pool panel — it's saved in
+  `localStorage`, never committed.
+
+Photos are hotlinked and credited per the Unsplash API guidelines.
 
 ## Stack
 
 - **Next.js 16** (App Router) · **React 19** · **TypeScript**
-- **Three.js** — raw GLSL fragment shader on a single fullscreen quad (no R3F overhead)
+- **Three.js** — one GLSL fragment shader on a fullscreen quad (multi-texture blend
+  + geometric UV filters); no R3F overhead
 - **Web Audio API** — `AudioContext` / `AnalyserNode`, mic + file routing, FFT bands
 - **MediaRecorder** + `canvas.captureStream()` for live video capture
 - **Tailwind CSS v4** · **Vitest**
@@ -51,17 +68,18 @@ locks to the beat. Record the performance straight to video.
 ## Architecture
 
 The engine is decoupled from the UI: audio analysis, tempo/beat-grid detection,
-waveform extraction, the renderer, and the recorder are pure modules that run
-without the DOM. React is a thin projection on top.
+the texture pool + layer scheduler, the renderer, and the recorder are pure modules.
+React is a thin projection on top.
 
 ```
 src/
   audio/      decode, FFT bands, beat detector, tempo/beat-grid, waveform peaks
-  visuals/    three.js renderer, GLSL shaders, uniforms, beat pulse
-  patterns/   pluggable pattern sources (procedural / static / upload)
+  textures/   texture pool (GPU lifecycle) · layer scheduler (window over the pool)
+  visuals/    three.js renderer, pipeline GLSL shader, uniforms
+  patterns/   unsplash API client + types
   recording/  canvas + audio capture → MP4/WebM
-  hooks/      audio analyser, keyboard controls, visual params
-  components/ deck shell + controls (thin UI)
+  hooks/      audio analyser, pipeline params, texture pool
+  components/ deck shell, stage canvas, worktree/pool controls (thin UI)
 ```
 
 ## Getting started
@@ -84,15 +102,15 @@ npm run typecheck  # tsc --noEmit
 ## Tests
 
 Unit tests cover the pure engine — FFT band slicing, beat detection, tempo/grid
-math, and waveform peaks — including an end-to-end pipeline test that decodes a
-real synthetic WAV fixture and asserts the detected BPM. Regenerate the fixture
-with `node scripts/gen-test-wav.mjs`.
+math, waveform peaks, the layer scheduler (window advance / beat / density), and
+the uniform mapping — including an end-to-end test that decodes a real synthetic
+WAV fixture and asserts the detected BPM.
 
 ## Deployment
 
 Pushing to `main` builds a static export and publishes it to GitHub Pages via
-GitHub Actions (`.github/workflows/deploy.yml`). The site is served under the
-`/synesthesia` base path.
+GitHub Actions (`.github/workflows/deploy.yml`), served under the `/synesthesia`
+base path.
 
 ## License
 

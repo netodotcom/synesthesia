@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { applyUniforms, createUniforms } from "@/visuals/uniforms";
-import { createDefaultVisualParams } from "@/lib/types";
+import { createDefaultPipelineParams } from "@/lib/types";
 import type { AudioFrame } from "@/lib/types";
 
 const frameWith = (overrides: Partial<AudioFrame> = {}): AudioFrame => ({
@@ -15,45 +15,56 @@ const frameWith = (overrides: Partial<AudioFrame> = {}): AudioFrame => ({
 describe("createUniforms", () => {
   it("provides every uniform with a sane default", () => {
     const u = createUniforms();
-    expect(u.uSegments.value).toBeGreaterThanOrEqual(2);
     expect(u.uResolution.value.x).toBeGreaterThan(0);
-    expect(u.uTexture.value).toBeNull();
+    expect(u.uLayerCount.value).toBe(0);
     expect(u.uReactivity.value).toBe(1);
+    expect(Array.isArray(u.uLayers.value)).toBe(true);
   });
 });
 
 describe("applyUniforms", () => {
-  it("maps visual params into the matching uniforms", () => {
+  it("maps blend mode + pattern to their integer indices", () => {
     const u = createUniforms();
-    const params = {
-      ...createDefaultVisualParams(),
-      segments: 12,
-      paletteInverted: true,
-      strobe: true,
-      zoom: 1.5,
-    };
-    applyUniforms(u, params, null, 1, 0);
-    expect(u.uSegments.value).toBe(12);
-    expect(u.uPaletteInvert.value).toBe(1);
-    expect(u.uStrobe.value).toBe(1);
-    expect(u.uZoom.value).toBe(1.5);
+    applyUniforms(u, { ...createDefaultPipelineParams(), blendMode: "displacement", pattern: "rings" }, null, 1);
+    expect(u.uBlendMode.value).toBe(4);
+    expect(u.uPattern.value).toBe(3);
   });
 
-  it("clamps segments to a minimum of 2", () => {
+  it("projects blend modes in the documented order", () => {
     const u = createUniforms();
-    applyUniforms(u, { ...createDefaultVisualParams(), segments: 1 }, null, 0, 0);
-    expect(u.uSegments.value).toBeGreaterThanOrEqual(2);
+    const base = createDefaultPipelineParams();
+    applyUniforms(u, { ...base, blendMode: "difference" }, null, 0);
+    expect(u.uBlendMode.value).toBe(0);
+    applyUniforms(u, { ...base, blendMode: "screen" }, null, 0);
+    expect(u.uBlendMode.value).toBe(2);
+    applyUniforms(u, { ...base, blendMode: "add" }, null, 0);
+    expect(u.uBlendMode.value).toBe(3);
   });
 
-  it("accumulates rotation by rotationSpeed * dt", () => {
+  it("maps pattern sub-params into their uniforms", () => {
     const u = createUniforms();
-    applyUniforms(u, { ...createDefaultVisualParams(), rotationSpeed: 2 }, null, 0, 0.5);
-    expect(u.uRotation.value).toBeCloseTo(1, 5);
+    const params = createDefaultPipelineParams();
+    params.pattern = "grid";
+    params.grid = { count: 5, gap: 0.1, altRotation: 1.2 };
+    applyUniforms(u, params, null, 0);
+    expect(u.uGridCount.value).toBe(5);
+    expect(u.uGridGap.value).toBe(0.1);
+    expect(u.uGridAltRot.value).toBe(1.2);
   });
 
-  it("feeds the audio bands into the uBands vec4 when a frame is present", () => {
+  it("clamps grid/ring counts to a minimum of 1", () => {
     const u = createUniforms();
-    applyUniforms(u, createDefaultVisualParams(), frameWith(), 0, 0);
+    const params = createDefaultPipelineParams();
+    params.grid.count = 0;
+    params.rings.count = 0;
+    applyUniforms(u, params, null, 0);
+    expect(u.uGridCount.value).toBeGreaterThanOrEqual(1);
+    expect(u.uRingCount.value).toBeGreaterThanOrEqual(1);
+  });
+
+  it("feeds the audio bands into uBands when a frame is present", () => {
+    const u = createUniforms();
+    applyUniforms(u, createDefaultPipelineParams(), frameWith(), 0);
     expect(u.uBands.value.x).toBe(0.2);
     expect(u.uBands.value.w).toBe(0.5);
     expect(u.uBeat.value).toBe(0.7);
@@ -64,55 +75,14 @@ describe("applyUniforms", () => {
     const u = createUniforms();
     u.uLevel.value = 1;
     u.uBeat.value = 1;
-    applyUniforms(u, createDefaultVisualParams(), null, 0, 0);
+    applyUniforms(u, createDefaultPipelineParams(), null, 0);
     expect(u.uLevel.value).toBeLessThan(1);
     expect(u.uBeat.value).toBeLessThan(1);
   });
 
-  it("defaults the chroma uniforms to the identity grade", () => {
+  it("writes the current time", () => {
     const u = createUniforms();
-    applyUniforms(u, createDefaultVisualParams(), null, 0, 0);
-    expect(u.uBrightness.value).toBe(0);
-    expect(u.uContrast.value).toBe(1);
-    expect(u.uGamma.value).toBe(1);
-    expect(u.uSaturation.value).toBe(1);
-    expect(u.uHueShift.value).toBe(0);
-    expect(u.uExposure.value).toBe(1);
-  });
-
-  it("projects chroma params into their uniforms", () => {
-    const u = createUniforms();
-    const params = createDefaultVisualParams();
-    params.chroma = {
-      brightness: 0.1,
-      contrast: 1.4,
-      gamma: 0.8,
-      saturation: 1.7,
-      hueShift: 2.5,
-      exposure: 1.2,
-    };
-    applyUniforms(u, params, null, 0, 0);
-    expect(u.uBrightness.value).toBe(0.1);
-    expect(u.uContrast.value).toBe(1.4);
-    expect(u.uGamma.value).toBe(0.8);
-    expect(u.uSaturation.value).toBe(1.7);
-    expect(u.uHueShift.value).toBe(2.5);
-    expect(u.uExposure.value).toBe(1.2);
-  });
-
-  it("projects specular params (mirrors as 0/1) into their uniforms", () => {
-    const u = createUniforms();
-    const params = createDefaultVisualParams();
-    params.specular = {
-      horizontalMirror: true,
-      verticalMirror: false,
-      mirrorCount: 6,
-      mirrorOffset: 0.25,
-    };
-    applyUniforms(u, params, null, 0, 0);
-    expect(u.uMirrorX.value).toBe(1);
-    expect(u.uMirrorY.value).toBe(0);
-    expect(u.uMirrorCount.value).toBe(6);
-    expect(u.uMirrorOffset.value).toBe(0.25);
+    applyUniforms(u, createDefaultPipelineParams(), null, 12.5);
+    expect(u.uTime.value).toBe(12.5);
   });
 });
